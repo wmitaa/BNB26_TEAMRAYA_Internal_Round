@@ -51,6 +51,7 @@ const {
   validateAudioChunk,
   BaseSpeechToTextProvider,
   MockSpeechToTextProvider,
+  DeepgramSpeechToTextProvider,
   SpeechToTextService
 } = require('./stt/speechToText');
 
@@ -176,6 +177,7 @@ module.exports = {
   SpeechToTextService,
   BaseSpeechToTextProvider,
   MockSpeechToTextProvider,
+  DeepgramSpeechToTextProvider,
   SpeakerAttributionService,
   attributeSpeaker,
 
