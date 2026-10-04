@@ -9,14 +9,43 @@ import useMicrophone from '../hooks/useMicrophone.js';
 import { leaveRoom, clearSession } from '../services/api.js';
 import { sendAudioChunk } from '../services/socket.js';
 
-const QUALITY = { good: ['Good', 'ok', '●'], noise: ['Background noise detected', 'warn', '▲'], poor: ['Poor', 'bad', '✕'] };
-
 export default function ConversationRoom() {
   const nav = useNavigate();
   const mic = useMicrophone(sendAudioChunk);
   const c = useConversation(mic);
   if (!c.session) return <Navigate to="/join" replace />;
-  const [qLabel, qTone, qIcon] = QUALITY[c.audioQuality.status] || QUALITY.good;
+
+  // Real-time microphone & stream health calculation
+  let qLabel = 'Idle';
+  let qTone = 'muted';
+  let qIcon = '○';
+  let qDetail = '';
+
+  if (mic.active) {
+    if (!mic.health) {
+      qLabel = 'Checking...';
+      qTone = 'warn';
+      qIcon = '◌';
+      qDetail = 'Measuring stream';
+    } else {
+      const { status, dbfs, clippingPercent } = mic.health;
+      if (status === 'good') {
+        qLabel = 'Good';
+        qTone = 'ok';
+        qIcon = '●';
+      } else if (status === 'fair') {
+        qLabel = 'Fair';
+        qTone = 'warn';
+        qIcon = '▲';
+      } else {
+        qLabel = 'Poor';
+        qTone = 'bad';
+        qIcon = '✕';
+      }
+      qDetail = `${dbfs} dBFS · ${clippingPercent}% clip`;
+    }
+  }
+
   const toggleMic = async () => { await mic.toggle(); };
   async function leave() { try { await leaveRoom(c.session); } catch { /* leave anyway */ } clearSession(); nav('/'); }
   return (
@@ -35,7 +64,18 @@ export default function ConversationRoom() {
       </aside>
       <main className="room-main"><LiveTranscript messages={c.transcript} participants={c.participants} overlap={c.overlap} /></main>
       <footer className="room-foot">
-        <div className={`quality quality-${qTone}`}><span className="muted">Audio quality</span><strong><span aria-hidden="true">{qIcon} </span>{qLabel}</strong></div>
+        <div className={`quality quality-${qTone}`}>
+          <span className="muted">Mic &amp; Stream Health</span>
+          <strong>
+            <span aria-hidden="true">{qIcon} </span>
+            {qLabel}
+            {qDetail && (
+              <span className="muted" style={{ fontWeight: 'normal', fontSize: '0.85em', marginLeft: '6px' }}>
+                · {qDetail}
+              </span>
+            )}
+          </strong>
+        </div>
         <MicButton status={mic.status} onClick={toggleMic} />
         {c.status === 'disconnected' && <button className="btn btn-sm btn-ghost" onClick={c.reconnect}>Reconnect</button>}
       </footer>

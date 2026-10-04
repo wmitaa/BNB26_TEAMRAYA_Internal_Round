@@ -8,6 +8,7 @@ export default function useMicrophone(onChunk) {
   const [permission, setPermission] = useState('prompt');
   const [active, setActive] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [health, setHealth] = useState(null);
   const cb = useRef(onChunk); cb.current = onChunk;
 
   useEffect(() => {
@@ -29,13 +30,17 @@ export default function useMicrophone(onChunk) {
 
   const start = useCallback(async () => {
     try {
-      await audio.start((c) => cb.current?.(c));
+      await audio.start(
+        (c) => cb.current?.(c),
+        (h) => setHealth(h)
+      );
       setPermission('granted');
       setActive(true);
       setMuted(false);
     } catch (e) {
       setPermission(e.code || 'unavailable');
       setActive(false);
+      setHealth(null);
     }
   }, []);
 
@@ -44,6 +49,7 @@ export default function useMicrophone(onChunk) {
     try { stopAudio(); } catch (_) {}
     setActive(false);
     setMuted(false);
+    setHealth(null);
   }, []);
 
   const toggle = useCallback(() => {
@@ -54,5 +60,5 @@ export default function useMicrophone(onChunk) {
   const status = permission === 'denied' ? 'denied' : permission === 'unavailable' ? 'unavailable'
     : active ? (muted ? 'muted' : 'on') : permission === 'granted' ? 'ready' : 'prompt';
 
-  return { status, active, muted, allow, start, stop, toggle };
+  return { status, active, muted, allow, start, stop, toggle, health };
 }

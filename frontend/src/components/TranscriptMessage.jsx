@@ -8,8 +8,14 @@ export default function TranscriptMessage({ message: m, speaker, latest, overlap
       <div className="msg-meta">
         <time>{m.timestamp}</time>
         <SpeakerBadge participant={speaker} />
-        <span className={`chip chip-${s}`}>{STATUS[s]}</span>
-        {s === 'final' && m.confidence != null && <span className="conf">{Math.round(m.confidence * 100)}% confidence</span>}
+        {s === 'final' && m.confidence != null && (
+          <span
+            className="conf"
+            title="STT model confidence; not ground-truth transcription accuracy."
+          >
+            STT Confidence: {Math.round(m.confidence * 100)}%
+          </span>
+        )}
       </div>
       <p>{m.text}{s !== 'final' && <span className="caret" aria-hidden="true" />}</p>
     </article>

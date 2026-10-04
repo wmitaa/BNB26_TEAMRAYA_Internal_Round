@@ -265,7 +265,7 @@ class DeepgramSpeechToTextProvider extends BaseSpeechToTextProvider {
     const streamKey = `${context.roomId}:${context.participantId}`;
     if (this.streams.has(streamKey)) {
       const existing = this.streams.get(streamKey);
-      if (existing.ws && existing.ws.readyState === 1 /* OPEN */ || existing.ws.readyState === 0 /* CONNECTING */) {
+      if (existing.ws && (existing.ws.readyState === 1 /* OPEN */ || existing.ws.readyState === 0 /* CONNECTING */)) {
         return existing;
       }
     }
@@ -451,14 +451,18 @@ class DeepgramSpeechToTextProvider extends BaseSpeechToTextProvider {
   closeStream(roomId, participantId) {
     const streamKey = `${roomId}:${participantId}`;
     const session = this.streams.get(streamKey);
-    if (session && session.ws) {
-      try {
-        if (session.ws.readyState === 1 /* OPEN */) {
-          // Send Deepgram close stream frame
-          session.ws.send(JSON.stringify({ type: 'CloseStream' }));
-        }
-        session.ws.close();
-      } catch (_) {}
+    if (session) {
+      if (session.ws) {
+        try {
+          if (session.ws.readyState === 1 /* OPEN */) {
+            // Send Deepgram close stream frame
+            session.ws.send(JSON.stringify({ type: 'CloseStream' }));
+          }
+          session.ws.close();
+        } catch (_) {}
+      }
+      session.queue = [];
+      session.isOpen = false;
     }
     this.streams.delete(streamKey);
   }

@@ -14,7 +14,10 @@ export default function CreateRoom() {
     if (!name.trim()) return setError('Enter your name to create a conversation.');
     setBusy(true); setError('');
     try { const r = await createRoom(name); saveSession(r); setRoom(r); }
-    catch { setError('We could not create the room. Check your connection and try again.'); }
+    catch (err) {
+      console.error('[CreateRoom] Error:', err);
+      setError(err.message || 'We could not create the room. Check your connection and try again.');
+    }
     setBusy(false);
   }
   async function copy() {
