@@ -25,7 +25,12 @@ function initializeSocketHandlers(io) {
     // ──────────────────────────────────────────────────────────────
     socket.on('join_room', (data, callback) => {
       try {
-        const { roomCode, participantId, name } = data || {};
+        const rawRoomCode = (data && data.roomCode) || '';
+        const roomCode = typeof rawRoomCode === 'string' ? rawRoomCode.trim().toUpperCase() : rawRoomCode;
+        const participantId = (data && data.participantId) || '';
+        const name = (data && (data.name || data.participantName)) || '';
+
+        console.log(`[SOCKET] join_room request: roomCode=${roomCode}, participantId=${participantId}, socketId=${socket.id}`);
 
         // Validate payload
         if (!roomCode || !participantId) {
@@ -37,6 +42,7 @@ function initializeSocketHandlers(io) {
         // Validate room exists
         const room = roomService.getRoomDetails(roomCode);
         if (!room) {
+          console.warn(`[SOCKET] join_room rejected: Room ${roomCode} not found`);
           const err = { success: false, error: 'Room not found' };
           if (typeof callback === 'function') return callback(err);
           return socket.emit('error_event', err);
@@ -105,11 +111,14 @@ function initializeSocketHandlers(io) {
     // ──────────────────────────────────────────────────────────────
     socket.on('leave_room', (data, callback) => {
       try {
-        const roomCode = (data && data.roomCode) || currentRoomCode;
+        const rawCode = (data && data.roomCode) || currentRoomCode;
+        const roomCode = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : rawCode;
         const participantId = (data && data.participantId) || currentParticipantId;
 
         if (roomCode && participantId) {
           handleParticipantLeave(io, socket, roomCode, participantId, false);
+          currentRoomCode = null;
+          currentParticipantId = null;
         }
 
         if (typeof callback === 'function') callback({ success: true });
@@ -157,6 +166,7 @@ function initializeSocketHandlers(io) {
             participantId,
             participantName: participant.name,
             audio: data.audio,
+            mimeType: data.mimeType,
             timestamp: data.timestamp || Date.now(),
           },
           // Callback when AI returns results
@@ -167,6 +177,23 @@ function initializeSocketHandlers(io) {
       } catch (err) {
         console.error('[SOCKET] audio_chunk error:', err.message || err);
         socket.emit('error_event', { success: false, error: 'Failed to process audio chunk' });
+      }
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // STOP AUDIO
+    // ──────────────────────────────────────────────────────────────
+    socket.on('stop_audio', (data) => {
+      try {
+        const rawCode = (data && data.roomCode) || currentRoomCode;
+        const roomCode = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : rawCode;
+        const participantId = (data && data.participantId) || currentParticipantId;
+
+        if (roomCode && participantId) {
+          audioService.closeParticipantSession(roomCode, participantId);
+        }
+      } catch (err) {
+        console.error('[SOCKET] stop_audio error:', err.message || err);
       }
     });
 
@@ -205,6 +232,9 @@ function initializeSocketHandlers(io) {
 // ══════════════════════════════════════════════════════════════════
 function handleParticipantLeave(io, socket, roomCode, participantId, isDisconnect) {
   try {
+    // Close active STT streaming session for this participant
+    audioService.closeParticipantSession(roomCode, participantId);
+
     if (isDisconnect) {
       // Temporary disconnect — mark as disconnected but keep in room
       // This supports reconnection / session continuity
@@ -222,9 +252,7 @@ function handleParticipantLeave(io, socket, roomCode, participantId, isDisconnec
       // Explicit leave — remove from room
       const removed = roomService.removeParticipant(roomCode, participantId);
       if (removed) {
-        socket.leave(roomCode);
-
-        socket.to(roomCode).emit('participant_left', {
+        io.to(roomCode).emit('participant_left', {
           id: removed.id,
           name: removed.name,
         });
@@ -233,6 +261,8 @@ function handleParticipantLeave(io, socket, roomCode, participantId, isDisconnec
           participantId: removed.id,
           status: 'disconnected',
         });
+
+        socket.leave(roomCode);
 
         console.log(`[SOCKET] ${removed.name} (${participantId}) left room ${roomCode}`);
       }
@@ -249,12 +279,14 @@ function handleTranscriptResult(io, roomCode, result) {
   if (!result || !roomCode) return;
 
   const transcriptPayload = {
+    transcriptId: result.transcriptId,
     roomCode: result.roomCode || roomCode,
     participantId: result.participantId,
     speakerName: result.speakerName,
     text: result.text,
     timestamp: result.timestamp,
     isFinal: result.isFinal,
+    confidence: result.confidence,
   };
 
   if (result.isFinal) {

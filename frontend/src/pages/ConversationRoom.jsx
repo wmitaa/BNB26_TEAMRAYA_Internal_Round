@@ -31,7 +31,7 @@ export default function ConversationRoom() {
       <aside className="room-side" aria-label="Participants">
         <h2>In this conversation</h2>
         <p className="muted">{c.connectedCount} devices connected</p>
-        <ul className="plist">{c.participants.map((p) => <ParticipantCard key={p.id} participant={p} isMe={p.id === 'me'} />)}</ul>
+        <ul className="plist">{c.participants.map((p) => <ParticipantCard key={p.id} participant={p} isMe={p.id === c.session?.participantId || p.id === 'me'} />)}</ul>
       </aside>
       <main className="room-main"><LiveTranscript messages={c.transcript} participants={c.participants} overlap={c.overlap} /></main>
       <footer className="room-foot">

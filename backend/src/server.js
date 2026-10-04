@@ -3,7 +3,9 @@
  * Creates HTTP server, attaches Socket.IO, starts listening.
  */
 
+const path = require('path');
 require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -19,7 +21,7 @@ const server = http.createServer(app);
 // ── Socket.IO ──────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URL,
+    origin: (origin, callback) => callback(null, true),
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -31,8 +33,8 @@ const io = new Server(server, {
 initializeSocketHandlers(io);
 
 // ── Start ──────────────────────────────────────────────────────────
-server.listen(PORT, () => {
-  console.log(`\n🟢  Roundtable backend running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🟢  Roundtable backend running on http://0.0.0.0:${PORT}`);
   console.log(`📡  Socket.IO ready — expecting frontend at ${CLIENT_URL}`);
   console.log(`❤️   Health check: http://localhost:${PORT}/api/health\n`);
 });

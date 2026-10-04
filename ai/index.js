@@ -119,7 +119,10 @@ function createTranscriptResult({
 }
 
 // Default singleton instances for zero-configuration use by backend
-const defaultSTTService = new SpeechToTextService(new MockSpeechToTextProvider());
+const defaultSTTProvider = (process.env.DEEPGRAM_API_KEY && process.env.DEEPGRAM_API_KEY.trim())
+  ? new DeepgramSpeechToTextProvider()
+  : new MockSpeechToTextProvider();
+const defaultSTTService = new SpeechToTextService(defaultSTTProvider);
 const defaultSpeakerService = new SpeakerAttributionService();
 
 /**

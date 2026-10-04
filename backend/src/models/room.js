@@ -31,19 +31,23 @@ function createParticipantObject({ id, name }) {
 
 // ── Store helpers ──────────────────────────────────────────────────
 function getRoom(roomCode) {
-  return rooms.get(roomCode) || null;
+  if (!roomCode || typeof roomCode !== 'string') return null;
+  return rooms.get(roomCode.trim().toUpperCase()) || null;
 }
 
 function setRoom(roomCode, room) {
-  rooms.set(roomCode, room);
+  if (!roomCode || typeof roomCode !== 'string') return;
+  rooms.set(roomCode.trim().toUpperCase(), room);
 }
 
 function deleteRoom(roomCode) {
-  rooms.delete(roomCode);
+  if (!roomCode || typeof roomCode !== 'string') return;
+  rooms.delete(roomCode.trim().toUpperCase());
 }
 
 function hasRoom(roomCode) {
-  return rooms.has(roomCode);
+  if (!roomCode || typeof roomCode !== 'string') return false;
+  return rooms.has(roomCode.trim().toUpperCase());
 }
 
 function getAllRoomCodes() {
