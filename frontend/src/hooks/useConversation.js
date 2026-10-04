@@ -22,6 +22,8 @@ export default function useConversation(mic) {
   const wasLost = useRef(false);
   const norm = (p) => normalizeParticipant(p, colors.current);
 
+  const overlapTimer = useRef(null);
+
   const notify = useCallback((text, tone = 'info') => {
     const id = Math.random().toString(36).slice(2);
     setNotices((n) => [...n.slice(-2), { id, text, tone }]);
@@ -58,7 +60,19 @@ export default function useConversation(mic) {
       if (ids.current.has(p.id)) { patch(p); if (p.connected === false) notify(`${p.name || 'A participant'} left the conversation.`); return; }
       const n = norm(p); ids.current.add(n.id); setParticipants((l) => [...l, n]); notify(`${n.name} joined the conversation.`);
     },
-    overlap: setOverlap,
+    overlap: (data) => {
+      if (!data) return;
+      const speakers = data.speakers || data.participantIds || [];
+      const active = Boolean(data.active && speakers.length > 1);
+      setOverlap({ active, speakers });
+      if (active) {
+        notify('Multiple speakers detected. Captions may be less reliable.', 'warn');
+        if (overlapTimer.current) clearTimeout(overlapTimer.current);
+        overlapTimer.current = setTimeout(() => {
+          setOverlap(NO_OVERLAP);
+        }, 4000);
+      }
+    },
     audio: setAudio,
     notice: (n) => notify(n.text, n.tone),
     status: (s) => {

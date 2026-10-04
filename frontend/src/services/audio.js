@@ -99,7 +99,7 @@ export async function start(onChunk, onHealth) {
           (rollingSilence.reduce((a, b) => a + b, 0) / rollingSilence.length) * 100
         );
 
-        // Classify quality
+        // Classify stream health status
         let status = 'good';
         if (clippingPercent >= 1 || dbfs <= -65 || lastChunkInterval > 800) {
           status = 'poor';
@@ -109,8 +109,31 @@ export async function start(onChunk, onHealth) {
           status = 'good';
         }
 
+        // Conservative condition classification heuristic (not environmental noise ML classification)
+        let condition = 'normal';
+        let conditionLabel = 'Audio normal';
+        if (lastChunkInterval > 650) {
+          condition = 'unstable';
+          conditionLabel = 'Unstable cadence';
+        } else if (clippingPercent >= 1 || (peak >= 0.98 && dbfs >= -3)) {
+          condition = 'noisy/clipping';
+          conditionLabel = 'Possible clipping/noise';
+        } else if (dbfs <= -48 || (silencePercent >= 75 && dbfs <= -40)) {
+          condition = 'quiet';
+          conditionLabel = 'Low audio signal';
+        } else {
+          condition = 'normal';
+          conditionLabel = 'Audio normal';
+        }
+
+        // Realtime speech activity heuristic (active when not silent and signal exceeds speech threshold)
+        const isSpeaking = !isSilent && rms >= 0.01 && dbfs > -42;
+
         onHealth?.({
           status,
+          condition,
+          conditionLabel,
+          isSpeaking,
           dbfs,
           peak: Number(peak.toFixed(2)),
           clippingPercent,

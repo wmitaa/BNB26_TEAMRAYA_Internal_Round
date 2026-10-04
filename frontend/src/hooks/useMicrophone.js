@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as audio from '../services/audio.js';
-import { stopAudio } from '../services/socket.js';
+import { stopAudio, sendAudioActivity } from '../services/socket.js';
 
 // status: prompt | ready | on | muted | denied | unavailable
 // onChunk (optional) receives { audioData, mimeType, timestamp } while the mic is capturing.
@@ -10,11 +10,17 @@ export default function useMicrophone(onChunk) {
   const [muted, setMuted] = useState(false);
   const [health, setHealth] = useState(null);
   const cb = useRef(onChunk); cb.current = onChunk;
+  const lastSpeaking = useRef(false);
+  const lastEmitTime = useRef(0);
 
   useEffect(() => {
     audio.queryPermission().then(setPermission);
     return () => {
       audio.stop();
+      if (lastSpeaking.current) {
+        lastSpeaking.current = false;
+        try { sendAudioActivity({ isSpeaking: false, timestamp: Date.now() }); } catch (_) {}
+      }
       try { stopAudio(); } catch (_) {}
     };
   }, []);
@@ -30,9 +36,20 @@ export default function useMicrophone(onChunk) {
 
   const start = useCallback(async () => {
     try {
+      lastSpeaking.current = false;
+      lastEmitTime.current = 0;
       await audio.start(
         (c) => cb.current?.(c),
-        (h) => setHealth(h)
+        (h) => {
+          setHealth(h);
+          const now = Date.now();
+          const isSpeaking = Boolean(h?.isSpeaking);
+          if (isSpeaking !== lastSpeaking.current || (isSpeaking && now - lastEmitTime.current > 1000)) {
+            lastSpeaking.current = isSpeaking;
+            lastEmitTime.current = now;
+            try { sendAudioActivity({ isSpeaking, timestamp: now }); } catch (_) {}
+          }
+        }
       );
       setPermission('granted');
       setActive(true);
@@ -46,6 +63,10 @@ export default function useMicrophone(onChunk) {
 
   const stop = useCallback(() => {
     audio.stop();
+    if (lastSpeaking.current) {
+      lastSpeaking.current = false;
+      try { sendAudioActivity({ isSpeaking: false, timestamp: Date.now() }); } catch (_) {}
+    }
     try { stopAudio(); } catch (_) {}
     setActive(false);
     setMuted(false);

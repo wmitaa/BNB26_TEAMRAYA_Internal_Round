@@ -299,6 +299,86 @@ async function runTests() {
   assert(mitaliReconnectState.participants.length === 2, 'No duplicate participant created on reconnect');
 
   // ══════════════════════════════════════════════════════════════
+  // TEST GROUP 8: Realtime Overlap & Speaking Activity Heuristic
+  // ══════════════════════════════════════════════════════════════
+  console.log('\n── Overlap & Speaking Activity Tests ──────\n');
+
+  let overlapEventCount = 0;
+  let receivedOverlap = null;
+  socketAnushka.on('overlap_detected', (data) => {
+    overlapEventCount++;
+    receivedOverlap = data;
+  });
+
+  // 8a. Single participant speaking — must NOT trigger overlap
+  socketAnushka.emit('audio_activity', {
+    roomCode,
+    participantId: anushkaId,
+    participantName: 'Anushka',
+    isSpeaking: true,
+    timestamp: Date.now(),
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  assert(overlapEventCount === 0, 'audio_activity from one participant does not trigger overlap');
+
+  // 8b. Second participant speaking within overlap window — triggers exactly one overlap event
+  socketMitaliReconnect.emit('audio_activity', {
+    roomCode,
+    participantId: mitaliId,
+    participantName: 'Mitali',
+    isSpeaking: true,
+    timestamp: Date.now(),
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  assert(overlapEventCount === 1, 'Two active participants within overlap window trigger overlap_detected');
+  assert(
+    receivedOverlap &&
+    receivedOverlap.participantIds.includes(anushkaId) &&
+    receivedOverlap.participantIds.includes(mitaliId),
+    'Overlap event payload includes both participant IDs'
+  );
+
+  // 8c. Repeated activity within debounce window must NOT spam events
+  socketAnushka.emit('audio_activity', {
+    roomCode,
+    participantId: anushkaId,
+    isSpeaking: true,
+    timestamp: Date.now(),
+  });
+  socketMitaliReconnect.emit('audio_activity', {
+    roomCode,
+    participantId: mitaliId,
+    isSpeaking: true,
+    timestamp: Date.now(),
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  assert(overlapEventCount === 1, 'Repeated activity within debounce window does not spam overlap events');
+
+  // 8d. Participant leaving/disconnecting clears activity state
+  socketMitaliReconnect.disconnect();
+  await new Promise((r) => setTimeout(r, 300));
+
+  // Single participant speaking after other disconnected does not trigger overlap
+  socketAnushka.emit('audio_activity', {
+    roomCode,
+    participantId: anushkaId,
+    isSpeaking: true,
+    timestamp: Date.now(),
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  assert(overlapEventCount === 1, 'Participant disconnect clears activity state');
+
+  // 8e. Reconnect does not create duplicate activity state
+  const socketMitali2 = await connectSocket();
+  await emitWithAck(socketMitali2, 'join_room', {
+    roomCode,
+    participantId: mitaliId,
+    name: 'Mitali',
+  });
+  const finalRoom = await api('GET', `/api/rooms/${roomCode}`);
+  assert(finalRoom.room.participants.length === 2, 'Reconnect preserves participant count and activity state');
+
+  // ══════════════════════════════════════════════════════════════
   // SUMMARY
   // ══════════════════════════════════════════════════════════════
   console.log('\n══════════════════════════════════════════════');
@@ -307,7 +387,7 @@ async function runTests() {
 
   // Cleanup
   socketAnushka.disconnect();
-  socketMitaliReconnect.disconnect();
+  socketMitali2.disconnect();
   socketShrvni.disconnect();
   socketAlice.disconnect();
 

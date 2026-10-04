@@ -20,6 +20,7 @@ export default function ConversationRoom() {
   let qTone = 'muted';
   let qIcon = '○';
   let qDetail = '';
+  let qCondition = '';
 
   if (mic.active) {
     if (!mic.health) {
@@ -28,7 +29,7 @@ export default function ConversationRoom() {
       qIcon = '◌';
       qDetail = 'Measuring stream';
     } else {
-      const { status, dbfs, clippingPercent } = mic.health;
+      const { status, conditionLabel, dbfs, clippingPercent } = mic.health;
       if (status === 'good') {
         qLabel = 'Good';
         qTone = 'ok';
@@ -42,6 +43,7 @@ export default function ConversationRoom() {
         qTone = 'bad';
         qIcon = '✕';
       }
+      qCondition = conditionLabel || 'Audio normal';
       qDetail = `${dbfs} dBFS · ${clippingPercent}% clip`;
     }
   }
@@ -73,11 +75,19 @@ export default function ConversationRoom() {
       </aside>
       <main className="room-main"><LiveTranscript messages={c.transcript} participants={c.participants} overlap={c.overlap} /></main>
       <footer className="room-foot">
-        <div className={`quality quality-${qTone}`}>
+        <div
+          className={`quality quality-${qTone}`}
+          title="Realtime audio condition heuristic; not environmental noise classification."
+        >
           <span className="muted">Mic &amp; Stream Health</span>
           <strong>
             <span aria-hidden="true">{qIcon} </span>
             {qLabel}
+            {qCondition && (
+              <span style={{ marginLeft: '6px', fontWeight: 600 }}>
+                · {qCondition}
+              </span>
+            )}
             {qDetail && (
               <span className="muted" style={{ fontWeight: 'normal', fontSize: '0.85em', marginLeft: '6px' }}>
                 · {qDetail}

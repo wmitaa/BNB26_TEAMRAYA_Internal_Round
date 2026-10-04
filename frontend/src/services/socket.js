@@ -199,9 +199,17 @@ function openReal(s) {
     emit('transcript:new', data);
   });
 
-  // 5. Overlap
+  // 5. Overlap (realtime overlap heuristic)
   sock.on('overlap_detected', (data) => {
-    if (data) emit('overlap', data);
+    if (!data) return;
+    const speakers = data.speakers || data.participantIds || [];
+    emit('overlap', {
+      active: data.active ?? (speakers.length > 1),
+      speakers,
+      participantIds: speakers,
+      participantNames: data.participantNames || [],
+      timestamp: data.timestamp || Date.now(),
+    });
   });
 
   // 6. Connection Status
@@ -276,6 +284,20 @@ export const stopAudio = () => {
     sock.emit('stop_audio', {
       roomCode: normalizedRoomCode,
       participantId: last.participantId,
+    });
+  }
+};
+
+// Sends lightweight speaking activity flag to backend for overlap heuristic
+export const sendAudioActivity = ({ isSpeaking, timestamp }) => {
+  if (sock && sock.connected && last) {
+    const normalizedRoomCode = (last.roomCode || last.roomId || '').trim().toUpperCase();
+    sock.emit('audio_activity', {
+      roomCode: normalizedRoomCode,
+      participantId: last.participantId,
+      participantName: last.participantName,
+      isSpeaking: Boolean(isSpeaking),
+      timestamp: timestamp || Date.now(),
     });
   }
 };

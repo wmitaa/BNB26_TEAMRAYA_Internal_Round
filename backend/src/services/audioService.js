@@ -31,22 +31,118 @@
 // ── Overlap listener ───────────────────────────────────────────────
 let overlapCallback = null;
 
+// ── Realtime Overlap Heuristic State ────────────────────────────────
+// Note: This is a lightweight realtime overlap heuristic based on participant
+// speaking activity timestamps, NOT an ML speaker diarization system.
+const OVERLAP_WINDOW_MS = 2000;    // Speech activity within 2s counts as simultaneous
+const OVERLAP_DEBOUNCE_MS = 3000;  // Debounce duplicate overlap events to once every 3s
+
+// Map<roomCode, Map<participantId, { isSpeaking: boolean, lastActiveTime: number, participantName: string }>>
+const roomSpeakingState = new Map();
+
+// Map<roomCode, number> (tracks last emitted overlap timestamp per room)
+const lastOverlapEmitTime = new Map();
+
 /**
- * Register a callback to be invoked when the AI layer detects overlap.
+ * Register a callback to be invoked when an overlap is detected.
  * The socketHandler calls this once at startup.
  *
- * @param {Function} cb — called with { roomCode, participants, timestamp }
+ * @param {Function} cb — called with { roomCode, participantIds, participantNames, timestamp }
  */
 function onOverlapDetected(cb) {
   overlapCallback = cb;
 }
 
 /**
- * Called by the AI layer (or the mock) to report an overlap event.
+ * Broadcast an overlap event to the registered listener.
  */
 function emitOverlap(data) {
   if (typeof overlapCallback === 'function') {
     overlapCallback(data);
+  }
+}
+
+/**
+ * Updates speaking activity for a participant in a room and triggers the
+ * overlap heuristic if 2 or more participants are simultaneously active.
+ *
+ * @param {Object} params
+ *   - roomCode        {string}
+ *   - participantId   {string}
+ *   - participantName {string}
+ *   - isSpeaking      {boolean}
+ *   - timestamp       {number} [optional]
+ */
+function handleAudioActivity({ roomCode, participantId, participantName, isSpeaking, timestamp = Date.now() }) {
+  if (!roomCode || !participantId) return;
+  const normCode = roomCode.trim().toUpperCase();
+
+  let participants = roomSpeakingState.get(normCode);
+  if (!participants) {
+    participants = new Map();
+    roomSpeakingState.set(normCode, participants);
+  }
+
+  const cleanName = typeof participantName === 'string' && participantName.trim()
+    ? participantName.trim()
+    : 'Speaker';
+
+  participants.set(participantId, {
+    isSpeaking: Boolean(isSpeaking),
+    lastActiveTime: Number(timestamp) || Date.now(),
+    participantName: cleanName,
+  });
+
+  if (!isSpeaking) return;
+
+  const now = Date.now();
+  // Find all active participants whose speech was registered within the overlap window
+  const activeSpeakers = [];
+  for (const [id, state] of participants.entries()) {
+    if (state.isSpeaking && (now - state.lastActiveTime) <= OVERLAP_WINDOW_MS) {
+      activeSpeakers.push({
+        id,
+        name: state.participantName,
+      });
+    }
+  }
+
+  // Overlap heuristic: 2 or more speakers simultaneously speaking
+  if (activeSpeakers.length >= 2) {
+    const lastEmit = lastOverlapEmitTime.get(normCode) || 0;
+    if (now - lastEmit >= OVERLAP_DEBOUNCE_MS) {
+      lastOverlapEmitTime.set(normCode, now);
+
+      const overlapData = {
+        roomCode: normCode,
+        participantIds: activeSpeakers.map((s) => s.id),
+        participantNames: activeSpeakers.map((s) => s.name),
+        speakers: activeSpeakers.map((s) => s.id),
+        active: true,
+        timestamp: now,
+      };
+
+      emitOverlap(overlapData);
+    }
+  }
+}
+
+/**
+ * Clears speaking activity state for a participant (e.g. upon leave or disconnect).
+ *
+ * @param {string} roomCode
+ * @param {string} participantId
+ */
+function clearParticipantActivity(roomCode, participantId) {
+  if (!roomCode || !participantId) return;
+  const normCode = roomCode.trim().toUpperCase();
+  const participants = roomSpeakingState.get(normCode);
+  if (participants) {
+    participants.delete(participantId);
+    if (participants.size === 0) {
+      roomSpeakingState.delete(normCode);
+      lastOverlapEmitTime.delete(normCode);
+    }
   }
 }
 
@@ -172,6 +268,7 @@ function normalizeAudioData(audio) {
  */
 function closeParticipantSession(roomCode, participantId) {
   try {
+    clearParticipantActivity(roomCode, participantId);
     if (aiAdapter?.sttService?.provider?.closeStream) {
       aiAdapter.sttService.provider.closeStream(roomCode, participantId);
     }
@@ -288,4 +385,8 @@ module.exports = {
   onOverlapDetected,
   emitOverlap,
   closeParticipantSession,
+  handleAudioActivity,
+  clearParticipantActivity,
+  OVERLAP_WINDOW_MS,
+  OVERLAP_DEBOUNCE_MS,
 };

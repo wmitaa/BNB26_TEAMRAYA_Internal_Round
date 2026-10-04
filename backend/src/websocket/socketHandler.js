@@ -65,6 +65,7 @@ function initializeSocketHandlers(io) {
 
         // 2. Bind socket ID and mark connected
         roomService.bindSocket(roomCode, participantId, socket.id);
+        audioService.clearParticipantActivity(roomCode, participantId);
 
         // 3. Track on this socket instance
         currentRoomCode = roomCode;
@@ -178,6 +179,37 @@ function initializeSocketHandlers(io) {
       } catch (err) {
         console.error('[SOCKET] audio_chunk error:', err.message || err);
         socket.emit('error_event', { success: false, error: 'Failed to process audio chunk' });
+      }
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // AUDIO ACTIVITY (Realtime speaking activity for overlap heuristic)
+    // ──────────────────────────────────────────────────────────────
+    socket.on('audio_activity', (data) => {
+      try {
+        const rawCode = (data && data.roomCode) || currentRoomCode;
+        const roomCode = typeof rawCode === 'string' ? rawCode.trim().toUpperCase() : rawCode;
+        const participantId = (data && data.participantId) || currentParticipantId;
+        const isSpeaking = Boolean(data && data.isSpeaking);
+        const timestamp = (data && data.timestamp) || Date.now();
+
+        if (!roomCode || !participantId) return;
+
+        const participant = roomService.validateParticipant(roomCode, participantId);
+        const participantName =
+          (data && (data.participantName || data.name)) ||
+          (participant && participant.name) ||
+          'Speaker';
+
+        audioService.handleAudioActivity({
+          roomCode,
+          participantId,
+          participantName,
+          isSpeaking,
+          timestamp,
+        });
+      } catch (err) {
+        console.error('[SOCKET] audio_activity error:', err.message || err);
       }
     });
 
