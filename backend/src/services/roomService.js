@@ -4,6 +4,8 @@
  * delegate to these functions.
  */
 
+const fs = require('fs');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const {
   createRoomObject,
@@ -13,6 +15,51 @@ const {
   hasRoom,
 } = require('../models/room');
 const { generateRoomCode } = require('../utils/roomCode');
+
+const TRANSCRIPTS_DIR = path.join(__dirname, '../../data/transcripts');
+
+function ensureTranscriptsDir() {
+  if (!fs.existsSync(TRANSCRIPTS_DIR)) {
+    fs.mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
+  }
+}
+try { ensureTranscriptsDir(); } catch (_) {}
+
+function getTranscriptFilePath(roomCode) {
+  const safeCode = (roomCode || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  return path.join(TRANSCRIPTS_DIR, `${safeCode}.json`);
+}
+
+function loadTranscriptsFromDisk(roomCode) {
+  try {
+    const filePath = getTranscriptFilePath(roomCode);
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf8');
+      const list = JSON.parse(data);
+      if (Array.isArray(list)) return list;
+    }
+  } catch (err) {
+    console.error(`[PERSISTENCE] Error reading transcripts for ${roomCode}:`, err.message);
+  }
+  return [];
+}
+
+function saveTranscriptsToDisk(roomCode, transcripts) {
+  try {
+    ensureTranscriptsDir();
+    const filePath = getTranscriptFilePath(roomCode);
+    const tempPath = `${filePath}.${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify(transcripts, null, 2), 'utf8');
+    try {
+      fs.renameSync(tempPath, filePath);
+    } catch (_) {
+      fs.copyFileSync(tempPath, filePath);
+      try { fs.unlinkSync(tempPath); } catch (e) {}
+    }
+  } catch (err) {
+    console.error(`[PERSISTENCE] Error saving transcripts for ${roomCode}:`, err.message);
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────
 // CREATE ROOM
@@ -77,9 +124,18 @@ function getRoomDetails(roomCode) {
     throw { status: 400, message: 'Room code is required' };
   }
 
-  const room = getRoom(roomCode);
+  const normCode = roomCode.trim().toUpperCase();
+  const room = getRoom(normCode);
   if (!room) {
     throw { status: 404, message: 'Room not found' };
+  }
+
+  // Restore transcripts from disk if in-memory list is empty
+  if (room.transcripts.length === 0) {
+    const diskTranscripts = loadTranscriptsFromDisk(normCode);
+    if (diskTranscripts.length > 0) {
+      room.transcripts = diskTranscripts;
+    }
   }
 
   return {
@@ -152,14 +208,166 @@ function unbindSocket(roomCode, participantId) {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// ADD TRANSCRIPT
+// ADD TRANSCRIPT (Persisted to disk, final transcripts only)
 // ────────────────────────────────────────────────────────────────────
 function addTranscript(roomCode, transcript) {
-  const room = getRoom(roomCode);
-  if (!room) return null;
+  if (!roomCode || !transcript) return null;
+  const normCode = roomCode.trim().toUpperCase();
+  const room = getRoom(normCode);
 
-  room.transcripts.push(transcript);
-  return transcript;
+  // Normalize transcript data contract
+  const normalized = {
+    transcriptId: transcript.transcriptId || uuidv4(),
+    roomId: transcript.roomId || transcript.roomCode || normCode,
+    speakerId: transcript.speakerId || transcript.participantId || 'unknown',
+    speakerName: transcript.speakerName || 'Speaker',
+    text: transcript.text || '',
+    timestamp: transcript.timestamp || Date.now(),
+    isFinal: true,
+    confidence: typeof transcript.confidence === 'number' ? transcript.confidence : 1.0,
+  };
+
+  let currentList = [];
+  if (room) {
+    const exists = room.transcripts.some((t) => t.transcriptId === normalized.transcriptId);
+    if (!exists) {
+      room.transcripts.push(normalized);
+    }
+    currentList = room.transcripts;
+  } else {
+    currentList = loadTranscriptsFromDisk(normCode);
+    const exists = currentList.some((t) => t.transcriptId === normalized.transcriptId);
+    if (!exists) {
+      currentList.push(normalized);
+    }
+  }
+
+  // Persist to disk (FINAL transcripts only)
+  saveTranscriptsToDisk(normCode, currentList);
+
+  return normalized;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// GET ROOM HISTORY (with optional search)
+// ────────────────────────────────────────────────────────────────────
+function getRoomHistory(roomCode, search) {
+  if (!roomCode || typeof roomCode !== 'string') {
+    throw { status: 400, message: 'Room code is required' };
+  }
+  const normCode = roomCode.trim().toUpperCase();
+
+  // Try in-memory first; fallback to disk
+  let transcripts = [];
+  const room = getRoom(normCode);
+  if (room && room.transcripts && room.transcripts.length > 0) {
+    transcripts = [...room.transcripts];
+  } else {
+    transcripts = loadTranscriptsFromDisk(normCode);
+    if (room && room.transcripts.length === 0) {
+      room.transcripts = transcripts;
+    }
+  }
+
+  if (search && typeof search === 'string' && search.trim()) {
+    const q = search.trim().toLowerCase();
+    transcripts = transcripts.filter(
+      (t) =>
+        (t.text && t.text.toLowerCase().includes(q)) ||
+        (t.speakerName && t.speakerName.toLowerCase().includes(q))
+    );
+  }
+
+  return {
+    roomCode: normCode,
+    transcripts,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// GENERATE TXT EXPORT
+// ────────────────────────────────────────────────────────────────────
+function generateTxtExport(roomCode) {
+  const { transcripts } = getRoomHistory(roomCode);
+  const normCode = (roomCode || '').trim().toUpperCase();
+
+  let out = `RoundTABLE Conversation\nRoom: ${normCode}\n\n`;
+  if (!transcripts || transcripts.length === 0) {
+    out += `No final transcripts recorded for this room.\n`;
+    return out;
+  }
+
+  transcripts.forEach((t) => {
+    let timeStr = '00:00:00';
+    try {
+      const d = new Date(t.timestamp);
+      if (!isNaN(d.getTime())) {
+        timeStr = d.toTimeString().split(' ')[0];
+      }
+    } catch (_) {}
+
+    out += `[${timeStr}] ${t.speakerName || 'Speaker'}:\n${t.text}\n\n`;
+  });
+
+  return out;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// GENERATE SRT EXPORT
+// ────────────────────────────────────────────────────────────────────
+function generateSrtExport(roomCode) {
+  const { transcripts } = getRoomHistory(roomCode);
+  if (!transcripts || transcripts.length === 0) {
+    return '1\n00:00:00,000 --> 00:00:03,000\nNo transcript available\n';
+  }
+
+  function formatSrtTime(totalMs) {
+    const ms = Math.floor(Math.max(0, totalMs) % 1000);
+    const totalSec = Math.floor(Math.max(0, totalMs) / 1000);
+    const s = totalSec % 60;
+    const totalMin = Math.floor(totalSec / 60);
+    const m = totalMin % 60;
+    const h = Math.floor(totalMin / 60);
+    const pad = (n, w = 2) => String(n).padStart(w, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+  }
+
+  let t0 = 0;
+  try {
+    const d0 = new Date(transcripts[0].timestamp).getTime();
+    if (!isNaN(d0)) t0 = d0;
+  } catch (_) {}
+
+  let srt = '';
+  let prevEndMs = 0;
+  const UTTERANCE_DURATION_MS = 3000;
+
+  transcripts.forEach((t, idx) => {
+    let startMs = 0;
+    try {
+      const curTime = new Date(t.timestamp).getTime();
+      if (!isNaN(curTime) && t0 > 0) {
+        startMs = Math.max(0, curTime - t0);
+      } else {
+        startMs = idx * UTTERANCE_DURATION_MS;
+      }
+    } catch (_) {
+      startMs = idx * UTTERANCE_DURATION_MS;
+    }
+
+    if (startMs < prevEndMs) {
+      startMs = prevEndMs;
+    }
+
+    const endMs = startMs + UTTERANCE_DURATION_MS;
+    prevEndMs = endMs;
+
+    srt += `${idx + 1}\n`;
+    srt += `${formatSrtTime(startMs)} --> ${formatSrtTime(endMs)}\n`;
+    srt += `${t.speakerName || 'Speaker'}: ${t.text}\n\n`;
+  });
+
+  return srt;
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -197,6 +405,10 @@ module.exports = {
   bindSocket,
   unbindSocket,
   addTranscript,
+  getRoomHistory,
+  generateTxtExport,
+  generateSrtExport,
+  loadTranscriptsFromDisk,
   findParticipantBySocketId,
   validateParticipant,
 };

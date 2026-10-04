@@ -15,4 +15,13 @@ router.post('/:roomCode/join', roomController.joinRoom);
 // Get room details
 router.get('/:roomCode', roomController.getRoom);
 
+// Get persistent room history with optional ?search=
+router.get('/:roomCode/history', roomController.getHistory);
+
+// Export transcripts as TXT
+router.get('/:roomCode/export/txt', roomController.exportTxt);
+
+// Export transcripts as SRT
+router.get('/:roomCode/export/srt', roomController.exportSrt);
+
 module.exports = router;

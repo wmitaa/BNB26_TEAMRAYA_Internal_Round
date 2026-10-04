@@ -60,8 +60,64 @@ async function getRoom(req, res) {
   }
 }
 
+// GET /api/rooms/:roomCode/history
+async function getHistory(req, res) {
+  try {
+    const { roomCode } = req.params;
+    const { search } = req.query;
+    const result = roomService.getRoomHistory(roomCode, search);
+
+    return res.status(200).json({
+      success: true,
+      roomCode: result.roomCode,
+      transcripts: result.transcripts,
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    const message = err.message || 'Internal server error';
+    return res.status(status).json({ success: false, error: message });
+  }
+}
+
+// GET /api/rooms/:roomCode/export/txt
+async function exportTxt(req, res) {
+  try {
+    const { roomCode } = req.params;
+    const content = roomService.generateTxtExport(roomCode);
+    const safeCode = (roomCode || 'room').trim().toUpperCase();
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="roundtable-${safeCode}.txt"`);
+    return res.status(200).send(content);
+  } catch (err) {
+    const status = err.status || 500;
+    const message = err.message || 'Internal server error';
+    return res.status(status).json({ success: false, error: message });
+  }
+}
+
+// GET /api/rooms/:roomCode/export/srt
+async function exportSrt(req, res) {
+  try {
+    const { roomCode } = req.params;
+    const content = roomService.generateSrtExport(roomCode);
+    const safeCode = (roomCode || 'room').trim().toUpperCase();
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="roundtable-${safeCode}.srt"`);
+    return res.status(200).send(content);
+  } catch (err) {
+    const status = err.status || 500;
+    const message = err.message || 'Internal server error';
+    return res.status(status).json({ success: false, error: message });
+  }
+}
+
 module.exports = {
   createRoom,
   joinRoom,
   getRoom,
+  getHistory,
+  exportTxt,
+  exportSrt,
 };

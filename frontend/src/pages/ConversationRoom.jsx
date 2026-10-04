@@ -47,7 +47,16 @@ export default function ConversationRoom() {
   }
 
   const toggleMic = async () => { await mic.toggle(); };
-  async function leave() { try { await leaveRoom(c.session); } catch { /* leave anyway */ } clearSession(); nav('/'); }
+  async function leave() {
+    const roomCode = c.session?.roomCode;
+    try { await leaveRoom(c.session); } catch { /* leave anyway */ }
+    clearSession();
+    if (roomCode) {
+      nav(`/summary?room=${encodeURIComponent(roomCode)}`);
+    } else {
+      nav('/');
+    }
+  }
   return (
     <div className="room">
       <header className="room-head">

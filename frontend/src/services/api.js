@@ -47,6 +47,32 @@ export async function getRoom(code) {
   await delay(150); return { code, status: 'active' };
 }
 
+export async function getRoomHistory(code, search = '') {
+  const norm = normalizeCode(code);
+  const q = search && search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+  if (!isMock) {
+    return http(`/api/rooms/${encodeURIComponent(norm)}/history${q}`, null, 'GET');
+  }
+  await delay(150);
+  const mockList = [
+    { transcriptId: 'm1', roomId: norm, speakerId: 'p1', speakerName: 'Mitali', text: "Let's start with the main problem.", timestamp: Date.now() - 30000, isFinal: true, confidence: 0.96 },
+    { transcriptId: 'm2', roomId: norm, speakerId: 'p2', speakerName: 'Anushka', text: 'I think we should focus on accessibility.', timestamp: Date.now() - 25000, isFinal: true, confidence: 0.93 },
+    { transcriptId: 'm3', roomId: norm, speakerId: 'p3', speakerName: 'Shrvni', text: 'Yes, and we can demonstrate multiple speakers.', timestamp: Date.now() - 15000, isFinal: true, confidence: 0.91 },
+  ];
+  let filtered = mockList;
+  if (search && search.trim()) {
+    const s = search.trim().toLowerCase();
+    filtered = filtered.filter((x) => x.text.toLowerCase().includes(s) || x.speakerName.toLowerCase().includes(s));
+  }
+  return { success: true, roomCode: norm, transcripts: filtered };
+}
+
+export function getExportUrl(code, format) {
+  const norm = normalizeCode(code);
+  const base = API_URL || '';
+  return `${base}/api/rooms/${encodeURIComponent(norm)}/export/${format}`;
+}
+
 // Session shape: { roomId, roomCode, participantId, participantName }. Tagged with the data mode. A session from the other mode is ignored, so mock and real never mix.
 export const saveSession = (s) => sessionStorage.setItem('roundtable.session', JSON.stringify({ ...s, mode: MODE }));
 export const loadSession = () => {
