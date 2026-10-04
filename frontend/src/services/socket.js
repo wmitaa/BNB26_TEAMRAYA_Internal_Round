@@ -87,6 +87,10 @@ function runMock(me) {
 function openReal(s) {
   sock = io(SOCKET_URL, {
     reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
   });
 
   // 1. Connection lifecycle & join_room
@@ -205,6 +209,7 @@ function openReal(s) {
     if (!data) return;
     if (data.participantId === s.participantId) {
       if (data.status === 'connected') emit('status', 'connected');
+      else if (data.status === 'reconnecting') emit('status', 'reconnecting');
       else if (data.status === 'disconnected') emit('status', 'disconnected');
     }
     emit('participants', {
@@ -215,7 +220,7 @@ function openReal(s) {
 }
 
 export function connect(session) {
-  disconnect();
+  disconnect(false);
   last = session;
   emit('status', 'connecting');
   if (isMock) {
@@ -225,11 +230,11 @@ export function connect(session) {
   }
 }
 
-export function disconnect() {
+export function disconnect(explicit = false) {
   timers.forEach(clearTimeout);
   timers = [];
   if (sock) {
-    if (sock.connected && last) {
+    if (sock.connected && last && explicit) {
       const normalizedRoomCode = (last.roomCode || last.roomId || '').trim().toUpperCase();
       sock.emit('leave_room', {
         roomCode: normalizedRoomCode,

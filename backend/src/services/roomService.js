@@ -153,10 +153,33 @@ function getRoomDetails(roomCode) {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// ENSURE PARTICIPANT (Idempotent: finds existing or registers new without duplicates)
+// ────────────────────────────────────────────────────────────────────
+function ensureParticipant(roomCode, participantId, name) {
+  const normCode = (roomCode || '').trim().toUpperCase();
+  const room = getRoom(normCode);
+  if (!room) return null;
+
+  let participant = room.participants.find((p) => p.id === participantId);
+  if (participant) {
+    if (name && typeof name === 'string' && name.trim()) {
+      participant.name = name.trim();
+    }
+    return { participant, isNew: false };
+  }
+
+  const cleanName = (name && typeof name === 'string' && name.trim()) ? name.trim() : 'Participant';
+  participant = createParticipantObject({ id: participantId, name: cleanName });
+  room.participants.push(participant);
+  return { participant, isNew: true };
+}
+
+// ────────────────────────────────────────────────────────────────────
 // REMOVE PARTICIPANT
 // ────────────────────────────────────────────────────────────────────
 function removeParticipant(roomCode, participantId) {
-  const room = getRoom(roomCode);
+  const normCode = (roomCode || '').trim().toUpperCase();
+  const room = getRoom(normCode);
   if (!room) return null;
 
   const idx = room.participants.findIndex((p) => p.id === participantId);
@@ -170,7 +193,8 @@ function removeParticipant(roomCode, participantId) {
 // UPDATE PARTICIPANT STATUS
 // ────────────────────────────────────────────────────────────────────
 function updateParticipantStatus(roomCode, participantId, status) {
-  const room = getRoom(roomCode);
+  const normCode = (roomCode || '').trim().toUpperCase();
+  const room = getRoom(normCode);
   if (!room) return null;
 
   const participant = room.participants.find((p) => p.id === participantId);
@@ -184,7 +208,8 @@ function updateParticipantStatus(roomCode, participantId, status) {
 // BIND / UNBIND SOCKET ID
 // ────────────────────────────────────────────────────────────────────
 function bindSocket(roomCode, participantId, socketId) {
-  const room = getRoom(roomCode);
+  const normCode = (roomCode || '').trim().toUpperCase();
+  const room = getRoom(normCode);
   if (!room) return null;
 
   const participant = room.participants.find((p) => p.id === participantId);
@@ -195,12 +220,18 @@ function bindSocket(roomCode, participantId, socketId) {
   return participant;
 }
 
-function unbindSocket(roomCode, participantId) {
-  const room = getRoom(roomCode);
+function unbindSocket(roomCode, participantId, socketId = null) {
+  const normCode = (roomCode || '').trim().toUpperCase();
+  const room = getRoom(normCode);
   if (!room) return null;
 
   const participant = room.participants.find((p) => p.id === participantId);
   if (!participant) return null;
+
+  // Stale disconnect guard: if a socketId is provided and participant already has a different active socketId, ignore
+  if (socketId && participant.socketId && participant.socketId !== socketId) {
+    return participant;
+  }
 
   participant.socketId = null;
   participant.status = 'disconnected';
@@ -387,10 +418,12 @@ function findParticipantBySocketId(socketId) {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────
 // VALIDATE PARTICIPANT IN ROOM
 // ────────────────────────────────────────────────────────────────────
 function validateParticipant(roomCode, participantId) {
-  const room = getRoom(roomCode);
+  const normCode = (roomCode || '').trim().toUpperCase();
+  const room = getRoom(normCode);
   if (!room) return null;
 
   return room.participants.find((p) => p.id === participantId) || null;
@@ -399,6 +432,7 @@ function validateParticipant(roomCode, participantId) {
 module.exports = {
   createRoom,
   joinRoom,
+  ensureParticipant,
   getRoomDetails,
   removeParticipant,
   updateParticipantStatus,

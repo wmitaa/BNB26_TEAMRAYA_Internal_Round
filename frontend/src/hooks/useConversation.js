@@ -62,8 +62,25 @@ export default function useConversation(mic) {
     audio: setAudio,
     notice: (n) => notify(n.text, n.tone),
     status: (s) => {
-      if (s === 'reconnecting') { wasLost.current = true; notify('Connection lost. Reconnecting...', 'warn'); }
-      if (s === 'connected' && wasLost.current) { wasLost.current = false; notify('Connection restored.', 'ok'); }
+      if (s === 'reconnecting') {
+        wasLost.current = true;
+        notify('Connection lost. Reconnecting...', 'warn');
+        if (mic && mic.active && typeof mic.stop === 'function') {
+          mic.stop();
+          notify('Microphone paused due to connection loss. Click Start to resume.', 'warn');
+        }
+      }
+      if (s === 'disconnected') {
+        wasLost.current = true;
+        if (mic && mic.active && typeof mic.stop === 'function') {
+          mic.stop();
+          notify('Microphone paused due to disconnection.', 'warn');
+        }
+      }
+      if (s === 'connected' && wasLost.current) {
+        wasLost.current = false;
+        notify('Connection restored.', 'ok');
+      }
     },
   });
 

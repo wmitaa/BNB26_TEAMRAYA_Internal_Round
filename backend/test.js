@@ -296,6 +296,7 @@ async function runTests() {
   // Mitali should receive room_state with existing transcripts
   const mitaliReconnectState = await mitaliReconnectStatePromise;
   assert(mitaliReconnectState.transcripts.length >= 1, 'Reconnected participant gets existing transcripts');
+  assert(mitaliReconnectState.participants.length === 2, 'No duplicate participant created on reconnect');
 
   // ══════════════════════════════════════════════════════════════
   // SUMMARY

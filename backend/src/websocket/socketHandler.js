@@ -48,16 +48,17 @@ function initializeSocketHandlers(io) {
           return socket.emit('error_event', err);
         }
 
-        // Validate participant is registered in the room
-        const participant = roomService.validateParticipant(roomCode, participantId);
-        if (!participant) {
-          const err = { success: false, error: 'Participant not found in this room' };
+        // Ensure participant is registered in the room (handles both new joins and reconnections deduplicated)
+        const participantRes = roomService.ensureParticipant(roomCode, participantId, name);
+        if (!participantRes || !participantRes.participant) {
+          const err = { success: false, error: 'Failed to register or locate participant in room' };
           if (typeof callback === 'function') return callback(err);
           return socket.emit('error_event', err);
         }
 
-        // Check if this is a reconnection (participant was previously connected)
-        const isReconnect = participant.status === 'disconnected' || participant.status === 'reconnecting';
+        const { participant, isNew } = participantRes;
+        // Check if this is a reconnection (participant was previously connected or marked disconnected)
+        const isReconnect = !isNew && (participant.status === 'disconnected' || participant.status === 'reconnecting');
 
         // 1. Join the Socket.IO room
         socket.join(roomCode);
@@ -232,14 +233,21 @@ function initializeSocketHandlers(io) {
 // ══════════════════════════════════════════════════════════════════
 function handleParticipantLeave(io, socket, roomCode, participantId, isDisconnect) {
   try {
-    // Close active STT streaming session for this participant
-    audioService.closeParticipantSession(roomCode, participantId);
-
     if (isDisconnect) {
+      // Check if participant already reconnected on a newer socket
+      const participant = roomService.validateParticipant(roomCode, participantId);
+      if (participant && participant.socketId && participant.socketId !== socket.id) {
+        console.log(`[SOCKET] Stale disconnect for ${participantId} (active: ${participant.socketId}, stale: ${socket.id}). Ignoring.`);
+        return;
+      }
+
+      // Close active STT streaming session for this participant
+      audioService.closeParticipantSession(roomCode, participantId);
+
       // Temporary disconnect — mark as disconnected but keep in room
       // This supports reconnection / session continuity
       roomService.updateParticipantStatus(roomCode, participantId, 'disconnected');
-      roomService.unbindSocket(roomCode, participantId);
+      roomService.unbindSocket(roomCode, participantId, socket.id);
 
       // Notify the room
       io.to(roomCode).emit('connection_status', {
@@ -249,7 +257,8 @@ function handleParticipantLeave(io, socket, roomCode, participantId, isDisconnec
 
       console.log(`[SOCKET] Participant ${participantId} disconnected from room ${roomCode}`);
     } else {
-      // Explicit leave — remove from room
+      // Explicit leave — close audio session and remove from room
+      audioService.closeParticipantSession(roomCode, participantId);
       const removed = roomService.removeParticipant(roomCode, participantId);
       if (removed) {
         io.to(roomCode).emit('participant_left', {
