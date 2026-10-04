@@ -5,6 +5,7 @@ export default function Navbar() {
     <header className="nav">
       <Logo />
       <nav aria-label="Main" className="nav-links">
+        <NavLink to="/history">Past Conversations</NavLink>
         <NavLink to="/create">Create Room</NavLink>
         <NavLink to="/join" className="btn btn-sm">Join Room</NavLink>
       </nav>

@@ -14,6 +14,7 @@ export default function Home() {
           <div className="row">
             <Link to="/create" className="btn">Create a Room</Link>
             <Link to="/join" className="btn btn-ghost">Join a Room</Link>
+            <Link to="/history" className="btn btn-ghost">Past Conversations</Link>
           </div>
         </div>
         <div className="preview" aria-label="Preview of a live conversation">

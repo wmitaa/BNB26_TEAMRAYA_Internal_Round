@@ -113,11 +113,27 @@ async function exportSrt(req, res) {
   }
 }
 
+// GET /api/rooms/history
+async function getAllConversations(req, res) {
+  try {
+    const conversations = roomService.getAllConversations();
+    return res.status(200).json({
+      success: true,
+      conversations,
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    const message = err.message || 'Internal server error';
+    return res.status(status).json({ success: false, error: message });
+  }
+}
+
 module.exports = {
   createRoom,
   joinRoom,
   getRoom,
   getHistory,
+  getAllConversations,
   exportTxt,
   exportSrt,
 };

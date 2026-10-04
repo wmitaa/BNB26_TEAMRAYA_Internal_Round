@@ -12,6 +12,9 @@ router.post('/', roomController.createRoom);
 // Join an existing room
 router.post('/:roomCode/join', roomController.joinRoom);
 
+// Get all persisted conversation sessions (must precede /:roomCode)
+router.get('/history', roomController.getAllConversations);
+
 // Get room details
 router.get('/:roomCode', roomController.getRoom);
 

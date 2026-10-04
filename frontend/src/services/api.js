@@ -67,10 +67,65 @@ export async function getRoomHistory(code, search = '') {
   return { success: true, roomCode: norm, transcripts: filtered };
 }
 
+export async function getAllConversations() {
+  if (!isMock) {
+    return http('/api/rooms/history', null, 'GET');
+  }
+  await delay(150);
+  return {
+    success: true,
+    conversations: [],
+  };
+}
+
 export function getExportUrl(code, format) {
   const norm = normalizeCode(code);
   const base = API_URL || '';
   return `${base}/api/rooms/${encodeURIComponent(norm)}/export/${format}`;
+}
+
+export async function downloadTranscript(code, format = 'txt') {
+  const norm = normalizeCode(code);
+  const ext = format.toLowerCase() === 'srt' ? 'srt' : 'txt';
+  const filename = `roundtable-${norm}.${ext}`;
+
+  if (isMock) {
+    const data = await getRoomHistory(norm);
+    const transcripts = data.transcripts || [];
+    let content = '';
+    if (ext === 'txt') {
+      content = `RoundTABLE Conversation\nRoom: ${norm}\n\n` +
+        transcripts.map((t) => `[${new Date(t.timestamp).toLocaleTimeString()}] ${t.speakerName}:\n${t.text}\n`).join('\n');
+    } else {
+      content = transcripts.map((t, i) => `${i + 1}\n00:00:${String(i * 3).padStart(2, '0')},000 --> 00:00:${String(i * 3 + 3).padStart(2, '0')},000\n${t.speakerName}: ${t.text}\n`).join('\n');
+    }
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { ok: true, filename };
+  }
+
+  const exportUrl = getExportUrl(norm, ext);
+  const res = await fetch(exportUrl);
+  if (!res.ok) {
+    throw new Error(`Export failed with status ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return { ok: true, filename };
 }
 
 // Session shape: { roomId, roomCode, participantId, participantName }. Tagged with the data mode. A session from the other mode is ignored, so mock and real never mix.

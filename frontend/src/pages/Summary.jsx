@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar.jsx';
-import { getRoomHistory, getExportUrl } from '../services/api.js';
+import { getRoomHistory, downloadTranscript } from '../services/api.js';
 import { formatTime } from '../utils/formatTime.js';
 
 export default function Summary() {
@@ -12,6 +12,8 @@ export default function Summary() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState(null);
+  const [downloadError, setDownloadError] = useState('');
 
   useEffect(() => {
     if (!roomCode) return;
@@ -37,6 +39,19 @@ export default function Summary() {
     };
   }, [roomCode, search]);
 
+  const handleDownload = async (format) => {
+    try {
+      setDownloading(format);
+      setDownloadError('');
+      await downloadTranscript(roomCode, format);
+    } catch (err) {
+      console.error('[Summary] Download error:', err);
+      setDownloadError(err.message || 'Failed to download transcript.');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   const displayTime = (ts) => {
     try {
       const d = new Date(ts);
@@ -60,23 +75,26 @@ export default function Summary() {
             </div>
             {roomCode && (
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <a
-                  href={getExportUrl(roomCode, 'txt')}
-                  download={`roundtable-${roomCode}.txt`}
+                <button
+                  type="button"
+                  onClick={() => handleDownload('txt')}
+                  disabled={downloading === 'txt'}
                   className="btn btn-sm btn-ghost"
                 >
-                  Download TXT
-                </a>
-                <a
-                  href={getExportUrl(roomCode, 'srt')}
-                  download={`roundtable-${roomCode}.srt`}
+                  {downloading === 'txt' ? 'Downloading...' : 'Download TXT'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownload('srt')}
+                  disabled={downloading === 'srt'}
                   className="btn btn-sm btn-ghost"
                 >
-                  Download SRT
-                </a>
+                  {downloading === 'srt' ? 'Downloading...' : 'Download SRT'}
+                </button>
               </div>
             )}
           </div>
+          {downloadError && <p className="error" role="alert" style={{ marginBottom: '0.75rem' }}>{downloadError}</p>}
 
           {!roomCode ? (
             <p className="muted">No room code specified. Return to home to start or join a conversation.</p>
@@ -126,9 +144,12 @@ export default function Summary() {
             </>
           )}
 
-          <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+          <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link to="/history" className="btn btn-ghost">
+              ← Past Conversations
+            </Link>
             <Link to="/" className="btn btn-ghost">
-              Back to home
+              Back to Home
             </Link>
           </div>
         </div>

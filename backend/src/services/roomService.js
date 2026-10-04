@@ -429,6 +429,83 @@ function validateParticipant(roomCode, participantId) {
   return room.participants.find((p) => p.id === participantId) || null;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// GET ALL CONVERSATIONS (Strictly from real persisted transcripts)
+// ────────────────────────────────────────────────────────────────────
+function getAllConversations() {
+  ensureTranscriptsDir();
+  const conversations = [];
+
+  try {
+    if (fs.existsSync(TRANSCRIPTS_DIR)) {
+      const files = fs.readdirSync(TRANSCRIPTS_DIR);
+      for (const file of files) {
+        if (!file.endsWith('.json') || file.endsWith('.tmp')) continue;
+        const roomCode = file.replace(/\.json$/i, '').trim().toUpperCase();
+        const filePath = path.join(TRANSCRIPTS_DIR, file);
+
+        let list = [];
+        let stat = null;
+        try {
+          stat = fs.statSync(filePath);
+          const raw = fs.readFileSync(filePath, 'utf8');
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) list = parsed;
+        } catch (e) {
+          console.error(`[PERSISTENCE] Error parsing ${file}:`, e.message);
+          continue;
+        }
+
+        // Filter to only valid final transcripts with meaningful text
+        const validTranscripts = list.filter((t) => {
+          if (!t || typeof t !== 'object') return false;
+          if (typeof t.text !== 'string' || !t.text.trim()) return false;
+          if (t.isFinal === false) return false;
+          return true;
+        });
+
+        // A room MUST have at least one valid final transcript to be a real conversation
+        if (validTranscripts.length === 0) {
+          continue;
+        }
+
+        const participantSet = new Set();
+        validTranscripts.forEach((t) => {
+          if (t.speakerName && typeof t.speakerName === 'string' && t.speakerName.trim()) {
+            participantSet.add(t.speakerName.trim());
+          }
+        });
+
+        const firstTimestamp = validTranscripts[0].timestamp;
+        const lastTimestamp = validTranscripts[validTranscripts.length - 1].timestamp;
+
+        const startTime = firstTimestamp || (stat ? stat.birthtime.toISOString() : new Date().toISOString());
+        const latestActivity = lastTimestamp || (stat ? stat.mtime.toISOString() : new Date().toISOString());
+
+        conversations.push({
+          roomCode,
+          startTime,
+          latestActivity,
+          participants: Array.from(participantSet),
+          transcriptCount: validTranscripts.length,
+          status: 'completed',
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[PERSISTENCE] Error scanning transcripts directory:', err.message);
+  }
+
+  // Sort newest first by latestActivity or startTime
+  conversations.sort((a, b) => {
+    const tA = new Date(a.latestActivity || a.startTime || 0).getTime();
+    const tB = new Date(b.latestActivity || b.startTime || 0).getTime();
+    return tB - tA;
+  });
+
+  return conversations;
+}
+
 module.exports = {
   createRoom,
   joinRoom,
@@ -440,6 +517,7 @@ module.exports = {
   unbindSocket,
   addTranscript,
   getRoomHistory,
+  getAllConversations,
   generateTxtExport,
   generateSrtExport,
   loadTranscriptsFromDisk,

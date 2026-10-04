@@ -66,7 +66,7 @@ export default function useConversation(mic) {
       const active = Boolean(data.active && speakers.length > 1);
       setOverlap({ active, speakers });
       if (active) {
-        notify('Multiple speakers detected. Captions may be less reliable.', 'warn');
+        notify('Multiple speakers detected.', 'warn');
         if (overlapTimer.current) clearTimeout(overlapTimer.current);
         overlapTimer.current = setTimeout(() => {
           setOverlap(NO_OVERLAP);

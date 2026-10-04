@@ -11,7 +11,7 @@ export default function LiveTranscript({ messages, participants, overlap }) {
       {overlap.active && (
         <div className="overlap-banner" role="alert">
           <strong>⚠ Multiple speakers detected</strong>
-          <span style={{ fontSize: '0.85em', color: '#8a5a15', fontWeight: 500 }}>Captions may be less reliable.</span>
+          <span style={{ fontSize: '0.85em', color: '#8a5a15', fontWeight: 500 }}>Overlapping speech detected</span>
           <span>{overlap.speakers.map((id) => <SpeakerBadge key={id} participant={by(id)} />)}</span>
         </div>
       )}

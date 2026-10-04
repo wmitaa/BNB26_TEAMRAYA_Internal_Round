@@ -379,6 +379,65 @@ async function runTests() {
   assert(finalRoom.room.participants.length === 2, 'Reconnect preserves participant count and activity state');
 
   // ══════════════════════════════════════════════════════════════
+  // TEST GROUP 9: Conversation History & Exports (Real Conversations Only)
+  // ══════════════════════════════════════════════════════════════
+  console.log('\n── Conversation History & Export Tests ────\n');
+
+  // 9a. Create an empty room with no transcripts
+  const emptyRoomRes = await api('POST', '/api/rooms', { name: 'EmptyRoomCreator' });
+  const emptyRoomCode = emptyRoomRes.roomCode;
+  assert(emptyRoomRes.success === true, 'Created empty room for testing');
+
+  // 9b. Another participant joins the empty room (still 0 transcripts)
+  await api('POST', `/api/rooms/${emptyRoomCode}/join`, { name: 'EmptyRoomJoiner' });
+
+  // 9c. GET /api/rooms/history returns list of conversations
+  const allHistory = await api('GET', '/api/rooms/history');
+  assert(allHistory.success === true, 'GET /api/rooms/history returns success');
+  assert(Array.isArray(allHistory.conversations), 'conversations is an array');
+
+  // 9d. Empty room and room with only create/join must NOT appear
+  const foundEmpty = allHistory.conversations.find((c) => c.roomCode === emptyRoomCode);
+  assert(!foundEmpty, 'Empty room with only create/join does NOT appear in /api/rooms/history');
+
+  // 9e. Room with valid final transcript DOES appear
+  const foundCurrent = allHistory.conversations.find((c) => c.roomCode === roomCode);
+  assert(!!foundCurrent, 'Room with valid final transcripts DOES appear in conversations history');
+  assert(foundCurrent && foundCurrent.transcriptCount >= 1, 'Appearing conversation has transcriptCount >= 1');
+  assert(foundCurrent && foundCurrent.status === 'completed', 'Conversation status is completed');
+
+  // 9f. Multiple real persisted rooms appear
+  assert(allHistory.conversations.length >= 2, 'Multiple real persisted rooms appear in history');
+
+  // 9g. No duplicate room entries appear
+  const codes = allHistory.conversations.map((c) => c.roomCode);
+  const uniqueCodes = new Set(codes);
+  assert(codes.length === uniqueCodes.size, 'No duplicate room codes exist in history');
+
+  // 9h. Every room in history has transcriptCount > 0 and at least one participant
+  const allHaveTranscripts = allHistory.conversations.every((c) => c.transcriptCount > 0 && c.participants.length > 0);
+  assert(allHaveTranscripts, 'Every conversation in history has transcriptCount > 0 and participants');
+
+  // 9i. GET /api/rooms/:roomCode/history returns room transcripts
+  const roomHist = await api('GET', `/api/rooms/${roomCode}/history`);
+  assert(roomHist.success === true, 'GET /api/rooms/:roomCode/history returns success');
+  assert(Array.isArray(roomHist.transcripts) && roomHist.transcripts.length >= 1, 'Room history contains transcripts');
+
+  // 9j. GET /api/rooms/:roomCode/export/txt returns valid TXT
+  const txtRes = await fetch(`${BASE_URL}/api/rooms/${roomCode}/export/txt`);
+  assert(txtRes.status === 200, 'TXT export returns status 200');
+  const txtContent = await txtRes.text();
+  assert(txtContent.includes(roomCode), 'TXT export contains roomCode header');
+  assert(txtContent.includes('Anushka'), 'TXT export contains speaker name');
+
+  // 9k. GET /api/rooms/:roomCode/export/srt returns valid SRT
+  const srtRes = await fetch(`${BASE_URL}/api/rooms/${roomCode}/export/srt`);
+  assert(srtRes.status === 200, 'SRT export returns status 200');
+  const srtContent = await srtRes.text();
+  assert(srtContent.includes('-->'), 'SRT export contains subtitle time arrows');
+  assert(srtContent.includes('Anushka:'), 'SRT export contains speaker-attributed text');
+
+  // ══════════════════════════════════════════════════════════════
   // SUMMARY
   // ══════════════════════════════════════════════════════════════
   console.log('\n══════════════════════════════════════════════');
